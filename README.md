@@ -11,4 +11,6 @@ Reliable automated techniques could allow researchers and industry to tap into t
 Submissions are evaluated on micro F(Beta), which is a classification metric that assigns value to recall and precision. The value of Beta is set to 5, which means that recall is weighted 5 times more heavily than precision.
 
 #Citations
-Langdon Holmes, Scott Crossley, Perpetual Baffour, Jules King, Lauryn Burleigh, Maggie Demkin, Ryan Holbrook, Walter Reade, Addison Howard. (2024). The Learning Agency Lab - PII Data Detection. Kaggle. https://kaggle.com/competitions/pii-detection-removal-from-educational-data
+1. Langdon Holmes, Scott Crossley, Perpetual Baffour, Jules King, Lauryn Burleigh, Maggie Demkin, Ryan Holbrook, Walter Reade, Addison Howard. (2024). The Learning Agency Lab - PII Data Detection. Kaggle. https://kaggle.com/competitions/pii-detection-removal-from-educational-data
+
+2. Repo organization from https://drivendata.github.io/cookiecutter-data-science/#why-use-this-project-structure 
