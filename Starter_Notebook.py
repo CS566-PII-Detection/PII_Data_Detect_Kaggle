@@ -265,10 +265,112 @@ ds = ds.map(
 
 
 
-##||Metrics and Training||
+##||Metrics and Training|| [Entire Section is 'Our Block']
+
+
+#TODO- Review and confirm works
+from seqeval.metrics import recall_score, precision_score
+from seqeval.metrics import classification_report
+from seqeval.metrics import f1_score
+
+
+def compute_metrics(p, all_labels):
+    """Compute the F1, recall, precision metrics for a NER task.
+
+    Args:
+        p (Tuple[np.ndarray, np.ndarray]): The predictions and labels.
+        all_labels (List[str]): The list of all possible labels.
+
+    Returns:
+        Dict[str, float]: The computed metrics (recall, precision, f1_score).
+    Ref: https://www.kaggle.com/code/valentinwerner/915-deberta3base-training/notebook
+    """
+    #Note: seqeval framework for sequence labeling like NER
+    
+    # Unpack the predictions and labels
+    predictions, labels = p
+    predictions = np.argmax(predictions, axis=2)
+
+    # Remove ignored index (special tokens)
+    true_predictions = [
+        [all_labels[p] for (p, l) in zip(prediction, label) if l != -100]
+        for prediction, label in zip(predictions, labels)
+    ]
+    true_labels = [
+        [all_labels[l] for (p, l) in zip(prediction, label) if l != -100]
+        for prediction, label in zip(predictions, labels)
+    ]
+    
+    recall = recall_score(true_labels, true_predictions)
+    precision = precision_score(true_labels, true_predictions)
+    f5_score = (1 + 5*5) * recall * precision / (5*5*precision + recall)
+    
+    results = {
+        'recall': recall,
+        'precision': precision,
+        'f5': f5_score
+    }
+    return results
+
+
+#load
+model = AutoModelForTokenClassification.from_pretrained(
+    TRAINING_MODEL_PATH,        #pretrained model
+    num_labels=len(all_labels), #num of unique labels for finetuning
+    id2label=id2label,          #dicts for converting in fine tuning
+    label2id=label2id,
+    ignore_mismatched_sizes=True #pretrained model might have been trained on different num of labels
+)
+
+#collate list of sample from dataset into batches. 16 might be benefical for GPU architecture
+collator = DataCollatorForTokenClassification(tokenizer, pad_to_multiple_of=16)
+
+#Configure training process
+#no validation set specified
+training_args = TrainingArguments(
+    output_dir=OUTPUT_DIR,  # Directory to save checkpoints and logs
+    fp16=True,  # mix-precision training on 16 bit to reduce memory and speed up training
+    gradient_accumulation_steps=GRADIENT_ACCUMULATION_STEPS,
+    report_to=REPORT_TO,
+    num_train_epochs=NUM_TRAIN_EPOCHS,
+    per_device_train_batch_size=PER_DEVICE_TRAIN_BATCH_SIZE,
+    do_eval=DO_EVAL,
+    evaluation_strategy=EVALUATION_STRATEGY,
+    logging_steps=LOGGING_STEPS,
+    save_total_limit=SAVE_TOTAL_LIMIT,
+    # Uncomment the following lines if you have defined these variables in your config script
+    #learning_rate=LR,
+    # save_steps=SAVE_STEPS,
+    # logging_dir=LOGGING_DIR,
+    # load_best_model_at_end=LOAD_BEST_MODEL_AT_END,
+    # metric_for_best_model=METRIC_FOR_BEST_MODEL,
+    # greater_is_better=GREATER_IS_BETTER,
+    # lr_scheduler_type=LR_SCHEDULER_TYPE,
+    # warmup_ratio=WARMUP_RATIO,
+    # weight_decay=WEIGHT_DECAY,
+)
+
+#inialize trainer for training and evaluation interface
+trainer = Trainer(
+    model=model, 
+    args=training_args, 
+    train_dataset=ds,
+    data_collator=collator, 
+    tokenizer=tokenizer,
+    compute_metrics=partial(compute_metrics, all_labels=all_labels), #partial to fix all_label argument
+)
+
+%%time
+
+#train model 
+trainer.train()
+
+trainer.save_model(FINE_TUNED_NAME)
+tokenizer.save_pretrained(FINE_TUNED_NAME)
 
 
 
+##||Next Sections|| 
 
 
 
