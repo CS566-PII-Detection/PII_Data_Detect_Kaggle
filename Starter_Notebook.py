@@ -41,19 +41,30 @@
 # # 📚 | Import Libraries 
 
 # %% [code] {"_kg_hide-output":true,"execution":{"iopub.status.busy":"2024-03-12T19:32:07.465085Z","iopub.execute_input":"2024-03-12T19:32:07.466035Z","iopub.status.idle":"2024-03-12T19:32:07.472772Z","shell.execute_reply.started":"2024-03-12T19:32:07.465997Z","shell.execute_reply":"2024-03-12T19:32:07.471705Z"}}
+from pathlib import Path
 import os
 os.environ["KERAS_BACKEND"] = "jax" # # you can also use tensorflow or torch
+
+import numpy as np
+import pandas as pd
+from tqdm.notebook import tqdm
+from sklearn.model_selection import train_test_split
 
 import keras
 import keras_nlp
 from keras import ops
 import tensorflow as tf
 
+import torch
+from transformers import AutoTokenizer, Trainer, TrainingArguments
+from transformers import AutoModelForTokenClassification, DataCollatorForTokenClassification
+import evaluate
+from datasets import Dataset, features
+
 import json
-import numpy as np
-import pandas as pd
-from tqdm.notebook import tqdm
-from sklearn.model_selection import train_test_split
+import argparse
+from itertools import chain
+from functools import partial
 
 import plotly.graph_objs as go
 import plotly.express as px
@@ -69,6 +80,199 @@ print("hi")
 
 # %% [markdown]
 # # ⚙️ | Configuration
+
+
+##||Configuration||
+
+
+##OUR BLOCK
+TRAINING_DATA_PATH = "/kaggle/input/pii-detect-miniset-and-validation-ds/mini_no_overlap.json"
+TRAINING_MODEL_PATH = "microsoft/deberta-v3-xsmall" #pretrained backbone model
+TRAINING_MAX_LENGTH = 1024 # max size of input sequence for training
+
+#Here or in body of notebook?
+# TRAIN_BATCH_SIZE = 2 * 8 # size of the input batch in training, x 2 as two GPUs
+# EPOCHS = 6 # number of epochs to train
+# LR_MODE = "exp" # lr scheduler mode from one of "cos", "step", "exp"
+
+#OUR BLOCK
+FINE_TUNED_NAME = "deberta3_xsmall_pii2d_1024_mini_v1"
+OUTPUT_DIR = "/kaggle/working/"
+
+#OUR BLOCK
+NOTEBOOK_SEED= 42
+
+#OUR BLOCK
+LABEL_SET = ["B-EMAIL", "B-ID_NUM", "B-NAME_STUDENT", "B-PHONE_NUM",
+          "B-STREET_ADDRESS", "B-URL_PERSONAL", "B-USERNAME",
+          "I-ID_NUM", "I-NAME_STUDENT", "I-PHONE_NUM",
+          "I-STREET_ADDRESS","I-URL_PERSONAL","O"]
+
+# Trainer API Configs
+# if commented out then it is commented out in trainer API args
+
+#OUR BLOCK
+#LR = 2e-5  # Initial learning rate
+GRADIENT_ACCUMULATION_STEPS = 2  # How many batches to accumulate gradient before optimization if batch size limited by GPU memory
+REPORT_TO = "none"  # Where training report progress, "none" prevents wandb login
+NUM_TRAIN_EPOCHS = 2  # Number of training epochs
+PER_DEVICE_TRAIN_BATCH_SIZE = 4  # Batch size based per GPU
+DO_EVAL = False  # Whether or not to perform eval during training
+EVALUATION_STRATEGY = "no"  # When to evaluate during training {no, steps or epoch}
+# LOGGING_DIR = OUTPUT_DIR + "/logs"  # Directory to save training logs
+LOGGING_STEPS = 100  # Log training progress every X steps
+# LOAD_BEST_MODEL_AT_END = True  # Load the best model at the end of training
+# METRIC_FOR_BEST_MODEL = "f5"  # Metric to determine the best model ("accuracy", f1...)
+# GREATER_IS_BETTER = True  # If higher eval metric is better. True for f1 and acc
+SAVE_TOTAL_LIMIT = 1  # How many checkpoints to keep at end (1 means most recent)
+# WARMUP_RATIO = 0.1  # Steps to gradually increase learning rate. Can help stabilize training at beginning
+# WEIGHT_DECAY = 0.01  # L2 regularization to prevent overfitting
+
+##||Data Selection||
+
+
+#OUR BLOCK
+#data from orginal training json
+data = json.load(open(TRAINING_DATA_PATH))
+org_data_df = pd.DataFrame(data)
+train_df = org_data_df
+print("Training Data: ", len(data))
+
+
+##||Tokenization||
+
+
+#OUR BLOCK
+#prep data for NER training by tokenize the text and align labels to tokens
+def tokenize(example, tokenizer, label2id, max_length):
+    """This function ensures that the text is correctly tokenized and the labels 
+    are correctly aligned with the tokens for NER training.
+
+    Args:
+        example (dict): The example containing the text and labels.
+        tokenizer (Tokenizer): The tokenizer used to tokenize the text.
+        label2id (dict): A dictionary mapping labels to their corresponding ids.
+        max_length (int): The maximum length of the tokenized text.
+
+    Returns:
+        dict: The tokenized example with aligned labels.
+
+    Reference: credit to https://www.kaggle.com/code/valentinwerner/915-deberta3base-training/notebook
+    """
+
+    #OUR BLOCK
+    # rebuild text from tokens
+    text = []
+    labels = []
+
+    #OUR BLOCK
+    #iterate through tokens, labels, and trailing whitespace using zip to create tuple from three lists
+    for t, l, ws in zip(
+        example["tokens"], example["labels"], example["trailing_whitespace"]
+    ):
+        text.append(t)
+
+        #OUR BLOCK
+        #extend so we can add multiple elements to end of list if ws
+        labels.extend([l] * len(t))
+        if ws:
+            text.append(" ")
+            labels.append("O")
+
+    #OUR BLOCK
+    #Tokenize text and return offsets for start and end character position. Limit length of tokenized text.
+    tokenized = tokenizer("".join(text), return_offsets_mapping=True, max_length=max_length, truncation=True)
+
+    #OUR BLOCK
+    #convert to np array for indexing
+    labels = np.array(labels)
+
+    #OUR BLOCK
+    # join text list into a single string 
+    text = "".join(text)
+    token_labels = []
+
+    #OUR BLOCK
+    #iterate through each tolken
+    for start_idx, end_idx in tokenized.offset_mapping:
+        #if special tolken (CLS token) then append O
+        #CLS : classification token added to the start of each sequence
+        if start_idx == 0 and end_idx == 0:
+            token_labels.append(label2id["O"])
+            continue
+
+        #OUR BLOCK
+        # case when token starts with whitespace
+        if text[start_idx].isspace():
+            start_idx += 1
+
+        #append orginal label to token_labels
+        token_labels.append(label2id[labels[start_idx]])
+
+    #OUR BLOCK
+    length = len(tokenized.input_ids)
+
+    #OUR BLOCK
+    return {**tokenized, "labels": token_labels, "length": length}
+
+
+#OUR BLOCK
+#Set up labeling for NER with #Targets: B-Beginning entity, I-inside entity, O- outside entity
+
+#OUR BLOCK
+#Extract all unique labels w/ list comprehension. Use chain to flatten list of lists
+all_labels = sorted(list(set(chain(*[x["labels"] for x in data]))))
+
+#OUR BLOCK
+#Create dictionary of label to id
+label2id = {l: i for i,l in enumerate(all_labels)}
+
+#OUR BLOCK
+#Create dictionary of id to label
+id2label = {v:k for k,v in label2id.items()}
+
+#OUR BLOCK
+#target labels identified in the training data- changed to all possible target labels
+target = [
+    'B-NAME_STUDENT', 'B-EMAIL','B-USERNAME', 'B-ID_NUM', 'B-PHONE_NUM',
+    'B-URL_PERSONAL', 'B-STREET_ADDRESS',
+    'I-NAME_STUDENT', 'I-EMAIL','B-USERNAME', 'I-ID_NUM', 'I-PHONE_NUM',
+    'I-URL_PERSONAL', 'I-STREET_ADDRESS', 'O'
+]
+
+#OUR BLOCK
+print(id2label)
+
+#OUR BLOCK
+#load tokenizer based on pretrained model
+tokenizer = AutoTokenizer.from_pretrained(TRAINING_MODEL_PATH)
+
+#OUR BLOCK
+#convert to hugging face Dataset object
+ds = Dataset.from_pandas(train_df)
+
+#OUR BLOCK
+# Map the tokenize function to your dataset
+ds = ds.map(
+    tokenize,
+    fn_kwargs={      # pass keyword args
+        "tokenizer": tokenizer,
+        "label2id": label2id,
+        "max_length": TRAINING_MAX_LENGTH
+    }, 
+    num_proc=2   #apply in paralell using 3 processes
+)
+
+
+
+##||Metrics and Training||
+
+
+
+
+
+
+
 
 # %% [code] {"execution":{"iopub.status.busy":"2024-03-12T19:32:32.928899Z","iopub.execute_input":"2024-03-12T19:32:32.929669Z","iopub.status.idle":"2024-03-12T19:32:32.936772Z","shell.execute_reply.started":"2024-03-12T19:32:32.929639Z","shell.execute_reply":"2024-03-12T19:32:32.935709Z"}}
 class CFG:
