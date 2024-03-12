@@ -1,0 +1,1 @@
+This is the "ReadMe" for the competition data (was needed to instantiate the Data folder).
