@@ -11,7 +11,9 @@ Notebooks are written to be run on kaggle and will require modification to run o
 
  3. Preparation notebook- Creates supporting datasets for PII detection training and validation
 
- 4. EDA Notebook - Anlaysis of the competition training dataset. 
+ 4. Data Augmentation notebook- Generate synthenic data for PII detection in student essays
+
+ 4. EDA notebook - Anlaysis of the competition training dataset. 
 
 ## Overview
 The goal of this competition is to develop a model that detects personally identifiable information (PII) in student writing. Your efforts to automate the detection and removal of PII from educational data will lower the cost of releasing educational datasets. This will support learning science research and the development of educational tools.
