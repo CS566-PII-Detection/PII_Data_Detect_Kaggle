@@ -1,16 +1,17 @@
 ### PII-Detection
 Kaggle PII Automated data detection and removal compettion
 
+## Usage
+Notebooks are written to be run on kaggle and will require modification to run on alternate platforms or local machine. W&B is used throughout but can be removed if report_to = 'none'
+
 ## Files
- 1. Inference notebook- apply model (finetuned or not) to data. Does not update model. Does not require GPU to run? 
-    Dependancies- model.py (updated or not), test_data.json
-    Input- Test data. 
-    Output- predictions.
+ 1. Inference notebook- apply finetuned model to data and does post processing on predictions. Does not update model.
 
  2. Training notebook- Fine tune and optimize given model (e.g. deBERTa) using labeled data. Resource intensive, GPU
-    Dependancies- model.py (base model)
-    Input- Train_X_data, Train_label_data
-    output- fine-tuned model.py
+
+ 3. Preparation notebook- Creates supporting datasets for PII detection training and validation
+
+ 4. EDA Notebook - Anlaysis of the competition training dataset. 
 
 ## Overview
 The goal of this competition is to develop a model that detects personally identifiable information (PII) in student writing. Your efforts to automate the detection and removal of PII from educational data will lower the cost of releasing educational datasets. This will support learning science research and the development of educational tools.
@@ -23,9 +24,7 @@ Submissions are evaluated on micro F(Beta), which is a classification metric tha
 # Citations
 1. Langdon Holmes, Scott Crossley, Perpetual Baffour, Jules King, Lauryn Burleigh, Maggie Demkin, Ryan Holbrook, Walter Reade, Addison Howard. (2024). The Learning Agency Lab - PII Data Detection. Kaggle. https://kaggle.com/competitions/pii-detection-removal-from-educational-data
 
-2. Repo organization from https://drivendata.github.io/cookiecutter-data-science/#why-use-this-project-structure 
 
 # Reference Notebooks
  1. https://www.kaggle.com/code/nbroad/transformer-ner-baseline-lb-0-881 for baseline deBERTa
 
- 2. 
